@@ -614,9 +614,12 @@ bool load_file(file_holder* _file, head* _head)
 DEBUG_PRINT(stderr, "load_file::started\n");
 	char *new_line = nullptr;
 	size_t size = 0;
-	ssize_t line_length;
+	ssize_t line_length = 0;
+	ssize_t total_length = 0;
 	while ((line_length = getline(&new_line, &size, _file->file)) != -1) 
 	{
+DEBUG_PRINT(stderr, "%d: %d: %d\n", size, line_length, total_length);
+	total_length += line_length;
 DEBUG_PRINT(stderr, "load_file::line_length: %ld\n", line_length);
 		if (line_length > LINE_LENGTH)
 		{
@@ -633,6 +636,8 @@ DEBUG_PRINT(stderr, "load_file::read_line: %s\n", new_line);
 			return false;
 		}
 	}
+DEBUG_PRINT(stderr, "%d: %d: %d\n", size, line_length, total_length);
+	fprintf(stderr, "%lu\n", total_length);
 
 	free(new_line);
 	if (errno != 0)
