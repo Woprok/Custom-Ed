@@ -49,6 +49,7 @@
 #define OPTIONS_UNWANTED 1
 #define FILE_IS_MANDATORY 1
 #define	ONLY_SIMPLE_FILE_NAMES 0
+#define PRINT_ERROR_ONCE 0
 
 //CONSTANTS
 #define nullptr NULL
@@ -57,7 +58,7 @@
 #define FILE_NAME_LENGTH 1024
 #define PROMPT_LENGTH 1024
 #define ARG_LENGTH 1024
-#define MESSAGE_COUNT 8
+#define MESSAGE_COUNT 9
 #define MESSAGE_LENGTH 256
 
 /*	Double linked list implementation
@@ -132,6 +133,7 @@ DEBUG_PRINT(stderr, "%s\n", "list_push_at::called");
 	{
 DEBUG_PRINT(stderr, "%s\n", "list_push_at::free_space_failed");
 		fprintf(stderr, "%s\n", "Out of memory.");
+		fflush(stderr);
 		return false;
 	}
 	strcpy(new_node->content, _content);
@@ -242,10 +244,11 @@ DEBUG_PRINT(stderr, "%s\n", "list_print_to_stream::printing");
 	{
 DEBUG_PRINT(stderr, "%s%d\n", "list_print_to_stream::printed: ", current_index);
 		if (_print_index)
-			fprintf(_stream, "%d\t%s", current_index, current_node->content);
+			fprintf(_stream, "%d%c%s", current_index, '\t', current_node->content);
 		else
 			fprintf(_stream, "%s", current_node->content);
 		
+		fflush(_stream);
 		current_node = current_node->successor;
 		++printed;
 		++current_index;
@@ -317,8 +320,8 @@ typedef struct error_holder
 	char messages[MESSAGE_COUNT][MESSAGE_LENGTH];
 } error_holder;
 
-const error_holder ERROR_HOLDER_DEFAULT = { false, false, true, -1, { "Unknown command\n\0", "Unknown command suffix\n\0", "Invalid address\n\0", 
-"Unexpected address\n\0", "No current filename\n\0", "Wrong filename\n\0", "command \"i\"  input exception\n\0", "command \"w\"  input exception\n\0" } };
+const error_holder ERROR_HOLDER_DEFAULT = { false, false, true, -1, { "Unknown command\n\0", "Invalid command suffix\n\0", "Invalid address\n\0", 
+"Unexpected address\n\0", "No current filename\n\0", "Wrong filename\n\0", "command \"i\"  input exception\n\0", "command \"w\"  input exception\n\0", "Cannot open input file\n\0" } };
 
 typedef struct command
 {
@@ -330,8 +333,53 @@ typedef struct command
 
 const command COMMAND_DEFAULT = { false, false, '0', "\0" };
 
+void update_error_check_print(error_holder* _error, bool _run)
+{
+#if PRINT_ERROR_ONCE
+	if (!_error->printed)
+#endif
+		if ((_error->auto_print || _run) && _error->code >= 0 && _error->code < MESSAGE_COUNT)
+		{
+			fprintf(stderr, "%s", _error->messages[_error->code]);
+			fflush(stderr);
+			_error->printed = true;
+		}
+}
+
+void update_error_holder_code_only(error_holder* _error, int _code)
+{
+	if (_code >= 0 && _code < MESSAGE_COUNT)
+	{
+		_error->is_set = true;
+		_error->code = _code;
+		_error->printed = false;
+	}
+}
+
+void update_error_holder_code(error_holder* _error, int _code, bool _run)
+{
+	if (_code >= 0 && _code < MESSAGE_COUNT)
+	{
+		fprintf(stderr, "%s\n", "?");
+		fflush(stderr);
+		_error->is_set = true;
+		_error->code = _code;
+		_error->printed = false;
+	}
+	update_error_check_print(_error, _run);
+}
+
+void update_error_holder(error_holder* _error, bool _run, bool _swap_toggle)
+{
+	if (_swap_toggle)
+	{
+		_error->auto_print = !_error->auto_print;
+	}
+	update_error_check_print(_error, _run);
+}
+
 //true if file was opened, false if file was already opened or file can't be opened, updates error_code.
-bool file_open(file_holder* _file)
+bool file_open(file_holder* _file, error_holder* _error)
 {
 DEBUG_PRINT(stderr, "%s\n", "file_open::started");
 	if (_file->is_open)
@@ -344,6 +392,8 @@ DEBUG_PRINT(stderr, "%s\n", "file_open::already_opened");
 		_file->error_code = errno;
 		errno = 0;
 		fprintf(stderr, "%s: %s\n", _file->file_name, strerror(_file->error_code));
+		fflush(stderr);
+		update_error_holder_code_only(_error, 8);
 DEBUG_PRINT(stderr, "%s\n", "file_open::failed");
         return false;
     }
@@ -417,7 +467,9 @@ bool parse_option_monogram(option_holder* _option, const char* _monogram)
 				if (strstr(_monogram, "p=") == nullptr || strstr(_monogram, "p=") != _monogram + i)
 				{
 					fprintf(stderr, "ed: illegal option -- %s\n", _monogram + i);
+					fflush(stderr);
 					fprintf(stderr, "usage: ed file\n");
+					fflush(stderr);
 					return false;
 				}
 				strcpy(_option->prompt_string, _monogram + i + strlen("p="));
@@ -425,7 +477,9 @@ bool parse_option_monogram(option_holder* _option, const char* _monogram)
 				break;
 			default: //error	
 				fprintf(stderr, "ed: illegal option -- %c\n", _monogram[i]);
+				fflush(stderr);
 				fprintf(stderr, "usage: ed file\n");	
+				fflush(stderr);
 				return false;
 				break;
 		}
@@ -494,7 +548,9 @@ bool parse_option_expanded(option_holder* _option, const char* _expanded)
 		return true;
 	}
 	fprintf(stderr, "ed: illegal option -- %s\n", _expanded + strlen("--"));
-	fprintf(stderr, "usage: ed file\n");	
+	fflush(stderr);
+	fprintf(stderr, "usage: ed file\n");
+	fflush(stderr);	
 	return false;
 }
 
@@ -515,7 +571,9 @@ DEBUG_PRINT(stderr, "argv[%d] = \"%s\"\n", i, _argv[i]);
 		if (strlen(_argv[i]) >= ARG_LENGTH) //there needs to be some kind of a limit... again not specified
 		{
 			fprintf(stderr, "ed: illegal argument -- %s\n", _argv[i]); //this is just result of unspecified behaviour
+			fflush(stderr);
 			fprintf(stderr, "usage: ed file\n");
+			fflush(stderr);
 			return false;
 		}
 		if (_argv[i][0] == '-' && _argv[i][1] == '-' && _argv[i][2] != '\0')
@@ -543,7 +601,9 @@ DEBUG_PRINT(stderr, "argv[%d] = \"%s\"\n", i, _argv[i]);
 		}
 
 		fprintf(stderr, "ed: illegal argument -- %s\n", _argv[i]); //this is just result of unspecified events
+		fflush(stderr);
 		fprintf(stderr, "usage: ed file\n");
+		fflush(stderr);
 		return false;
 	}
 	return true;
@@ -561,6 +621,7 @@ DEBUG_PRINT(stderr, "load_file::line_length: %ld\n", line_length);
 		if (line_length > LINE_LENGTH)
 		{
 			fprintf(stderr, "Line length exceeded: %d, read value: %ld\n", LINE_LENGTH, line_length);
+			fflush(stderr);
 DEBUG_PRINT(stderr, "load_file::error::line_length: %ld\n", line_length);
 			free(new_line);
 			return false;			
@@ -577,6 +638,7 @@ DEBUG_PRINT(stderr, "load_file::read_line: %s\n", new_line);
 	if (errno != 0)
 	{ 
 		fprintf(stderr, "%s\n", strerror(errno));
+		fflush(stderr);
 DEBUG_PRINT(stderr, "load_file::error::errno: %d\n", errno);
 		errno = 0;
 		return false;
@@ -723,14 +785,14 @@ DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::nullptr");
 	int n_value = 0;
 	int m_value = 0;
 	if (!_address_n->is_num) //we can be naive as previous checks should never let us get here
-		n_value = (_address_n->special_value == '.') ? _current_line : _head_count; 
+		n_value = (_address_n->special_value == '.') ? _current_line : _head_count - 1; 
 	else 
 		n_value = _address_n->numeric_value;
 
 	if (_address_m->is_set)
 	{
 		if (!_address_m->is_num)
-			m_value = (_address_m->special_value == '.') ? _current_line : _head_count; 
+			m_value = (_address_m->special_value == '.') ? _current_line : _head_count - 1; 
 		else 
 			m_value = _address_m->numeric_value;
 	}
@@ -774,20 +836,22 @@ DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double");
 			return nullptr;
 		if (m_value < 0 && (_current_line + m_value) < 1)
 			return nullptr;
-		if (n_value == 0 || n_value > _head_count || m_value == 0 || m_value > _head_count || (n_value + m_value) > _head_count)
+		if (n_value == 0 || n_value > _head_count || m_value == 0 || m_value > _head_count || (n_value != m_value && (n_value + m_value) > _head_count))
 			return nullptr; //this mean that its out of bounds
 
 		if (n_value > 0 && m_value > 0)
 		{
 			new_address->from_address = n_value;
 			new_address->address_range = m_value;
+			if (n_value != m_value)
+				new_address->address_range = new_address->address_range - new_address->from_address + 1;
 		}
 		if (n_value < 0 && m_value < 0)
 		{
 			new_address->from_address = (_current_line + n_value);
 			new_address->address_range = (_current_line + m_value);
 			if (n_value != m_value)
-				new_address->address_range = new_address->address_range - new_address->from_address;
+				new_address->address_range = new_address->address_range - new_address->from_address + 1;
 		}
 		if ((n_value < 0 && m_value > 0) || (n_value > 0 && m_value < 0)) //just fcking decide what you want and dont combine both
 		{
@@ -800,36 +864,6 @@ DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::return");
 DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::error");
 	return nullptr;
 }
-
-void update_error_check_print(error_holder* _error, bool _run)
-{
-	if (!_error->printed && (_error->auto_print || _run) && _error->code >= 0 && _error->code < MESSAGE_COUNT)
-	{
-		fprintf(stderr, "%s", _error->messages[_error->code]);
-		_error->printed = true;
-	}
-}
-
-void update_error_holder_code(error_holder* _error, int _code, bool _run)
-{
-	if (_code >= 0 && _code < MESSAGE_COUNT)
-	{
-		_error->is_set = true;
-		_error->code = _code;
-		_error->printed = false;
-	}
-	update_error_check_print(_error, _run);
-}
-
-void update_error_holder(error_holder* _error, bool _run, bool _swap_toggle)
-{
-	if (_swap_toggle)
-	{
-		_error->auto_print = !_error->auto_print;
-	}
-	update_error_check_print(_error, _run);
-}
-
 
 command* get_command(error_holder* _error, const char* _command_line)
 {
@@ -932,6 +966,8 @@ DEBUG_PRINT(stderr, "get_command::FILE_ARG::%s\n", _com->arg);
 		{
 			return _com;
 		}
+		update_error_holder_code(_error, 1, false);
+		return nullptr;
 	}
 
 DEBUG_PRINT(stderr, "%s\n", "get_command::unexpected_failure");
@@ -993,15 +1029,15 @@ DEBUG_PRINT(stderr, "Executing complicated: %c\n", _command->identifier);
 		case '\n':
 DEBUG_PRINT(stderr, "Executing /n: %d f%d r%d\n", _current_address->address_value, _address->from_address, _address->address_range);
 			list_print_to_stream(_head, stdout, _address->from_address, _address->address_range, false);
-			_current_address->address_value = _address->from_address + _address->address_range;
+			_current_address->address_value = _address->from_address + _address->address_range -1;
 			break;
 		case 'p': 
 			list_print_to_stream(_head, stdout, _address->from_address, _address->address_range, false);
-			_current_address->address_value = _address->from_address + _address->address_range;
+			_current_address->address_value = _address->from_address + _address->address_range -1;
 			break;
 		case 'n': 
 			list_print_to_stream(_head, stdout, _address->from_address, _address->address_range, true);
-			_current_address->address_value = _address->from_address + _address->address_range;
+			_current_address->address_value = _address->from_address + _address->address_range -1;
 			break;
 		case 'i': 
 			insert_command(_head, _address, _current_address, _error);			
@@ -1168,10 +1204,9 @@ DEBUG_PRINT(stderr, "%s\n", "process_user_command::error11");
 	On critical failure returns >0.
 	Otherwise returns 0.
 */
-int process_user_input(head* _head, file_holder* _file)
+int process_user_input(head* _head, file_holder* _file, error_holder* _error)
 {
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::called");
-	error_holder error = ERROR_HOLDER_DEFAULT;
 	address_holder current_address = ADDRESS_HOLDER_DEFAULT; 
 	current_address.address_value = _head->count;	
 	char *new_line = nullptr;
@@ -1189,24 +1224,30 @@ DEBUG_PRINT(stderr, "%s", new_line);
 			if (line_length > LINE_LENGTH)
 			{
 				fprintf(stderr, "ed: line too long, limit: %d, read: %ld\n", LINE_LENGTH, line_length);
+				fflush(stderr);
 				is_running = false;
 				return_code = 1;
 				break;			
 			}
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::began");
-			if (process_user_command(_file, _head, &error, &current_address, new_line))
+			if (process_user_command(_file, _head, _error, &current_address, new_line))
 			{
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::success");
 				if (current_address.address_value < 0) //command "q"
 				{
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::quit");
 					is_running = false;
-					return_code = 0;
 				}
-				if (!_file->is_open && error.is_set) //if file opening throws error, code executes until another error is triggered
+				if (_error->code == 8)
+					continue;
+				if (!_file->is_open && _error->is_set) //if file opening throws error, code executes until another error is triggered
 				{
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::force_quit");
 					is_running = false;	
+					return_code = 1;
+				}
+				if (_error->is_set) //why 8 ? exceptions from exceptions right ? just shut up ed you are drunk from birth
+				{
 					return_code = 1;
 				}
 			}
@@ -1216,6 +1257,8 @@ DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::failed");
 				is_running = false;
 				return_code = 1;
 			}
+			fflush(stdout);
+			fflush(stderr);
 		}
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::finished_cycle");
 	}
@@ -1224,6 +1267,7 @@ DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::finished");
 	if (errno != 0)
 	{ 
 		fprintf(stderr, "%s\n", strerror(errno));
+		fflush(stderr);
 		return_code = errno;
 		errno = 0;
 	}
@@ -1243,6 +1287,7 @@ DEBUG_PRINT(stderr, "%s\n", "main::called");
 	head main_file_list = HEAD_DEFAULT;
 	file_holder main_file = FILE_HOLDER_DEFAULT;
 	option_holder options = OPTION_HOLDER_DEFAULT;
+	error_holder error = ERROR_HOLDER_DEFAULT;
 	if (!parse_args(_argc, _argv, &options, &main_file))
 	{
 DEBUG_PRINT(stderr, "%s\n", "main::incorrect::args::parsed");
@@ -1254,11 +1299,15 @@ DEBUG_PRINT(stderr, "%s\n", "main::incorrect::args::parsed");
 	{
 DEBUG_PRINT(stderr, "%s\n", "main::incorrect::args::set");
 		fprintf(stderr, "%s\n", "ed: options are not supported");
+		fflush(stderr);
 		fprintf(stderr, "h:%d, V:%d, G:%d, l:%d, r:%d, s:%d, v:%d, p:%d=%s\n", 
 			options.help, options.version, options.traditional, options.loose_exit_status,
 			options.restricted, options.silent, options.verbose, options.prompt, options.prompt_string);
+		fflush(stderr);
 		fprintf(stderr, "%s\n", "ed: illegal option usage");
+		fflush(stderr);
 		fprintf(stderr, "%s\n", "usage: ed file");	
+		fflush(stderr);
 		exit(1);
 	} 
 #endif
@@ -1268,13 +1317,15 @@ DEBUG_PRINT(stderr, "%s\n", "main::incorrect::args::set");
 	{
 DEBUG_PRINT(stderr, "%s\n", "main::incorrect::args::no_file");
 		fprintf(stderr, "%s\n", "ed: file is mandatory");
+		fflush(stderr);
 		fprintf(stderr, "%s\n", "usage: ed file");	
+		fflush(stderr);
 		exit(1);
 	}
-#endif
+#endif	
 
 DEBUG_PRINT(stderr, "%s\n", "main::file_handling");
-	if (file_open(&main_file)) //file was opened
+	if (file_open(&main_file, &error)) //file was opened
 	{
 DEBUG_PRINT(stderr, "%s\n", "main::file_handling::opened");
 		if (!load_file(&main_file, &main_file_list))
@@ -1294,7 +1345,7 @@ DEBUG_PRINT(stderr, "%s\n", "main::file_handling::unopenable_file");
 	}
 
 DEBUG_PRINT(stderr, "%s\n", "main::loop::called");
-	int execution_result = process_user_input(&main_file_list, &main_file);
+	int execution_result = process_user_input(&main_file_list, &main_file, &error);
 DEBUG_PRINT(stderr, "%s\n", "main::loop::finished");
 
 	list_destroy(&main_file_list); //we are nice and we clear most of our trash
