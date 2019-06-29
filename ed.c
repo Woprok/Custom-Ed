@@ -987,6 +987,7 @@ DEBUG_PRINT(stderr, "get_command::FILE_ARG::%s\n", _com->arg);
 		}
 		else if (_command_line[1] == '\n' || _command_line[1] == '\0')
 		{
+			strcpy(_com->arg, "");
 			return _com;
 			//no action
 		}
@@ -1227,21 +1228,46 @@ DEBUG_PRINT(stderr, "%s\n", "process_user_command::error::incorrect_command");
 		}
 	}
 
-	if (_command->requires_arg && (_command->arg)[0] != '\0')
+
+	if (_command->requires_arg)
 	{
-DEBUG_PRINT(stderr, "%s\n", "process_user_command::handle::arg");
-		if ((_file->file_name)[0] != '\0') //special case with file arg suffix
+		/*if ((_command->arg)[0] == '\n')
 		{
-DEBUG_PRINT(stderr, "%s\n", "process_user_command::setting_file_name");
-			strcpy(_command->arg, _file->file_name);
+		fprintf(stderr, "%s\n", "debug hello");			
 		}
-		else
+		if ((_command->arg)[0] == '\0')
 		{
-DEBUG_PRINT(stderr, "%s\n", "process_user_command::couldnt_set_file");
-			update_error_holder_code(_error, 4, false);
-			free(_command_address);
-			free(_command);
-			return true; //no valid command
+		fprintf(stderr, "%s\n", "debug null");			
+		}
+		fprintf(stderr, "%s::%c::%s\n", "debug alfa", _command->identifier, _command->arg);
+		fprintf(stderr, "%s::%d::%d\n", "debug alfa", _command->requires_address, _command->requires_arg);
+		fflush(stderr);*/
+
+		if ((_command->arg)[0] != '\0') // arg was given
+		{
+DEBUG_PRINT(stderr, "%s\n", "process_user_command::handle::arg");
+			if ((_file->file_name)[0] == '\0') //no file
+			{
+DEBUG_PRINT(stderr, "%s\n", "process_user_command::late_save_file_name");
+				strcpy(_file->file_name, _command->arg);
+			}
+		}
+		if ((_command->arg)[0] == '\0') // no arg was given
+		{
+DEBUG_PRINT(stderr, "%s\n", "process_user_command::handle::no_arg");
+			if ((_file->file_name)[0] != '\0') //special case with file arg suffix
+			{
+DEBUG_PRINT(stderr, "%s\n", "process_user_command::obtain_file_name_from_arg");
+				strcpy(_command->arg, _file->file_name);
+			}
+			else
+			{
+DEBUG_PRINT(stderr, "%s\n", "process_user_command::impossible_to_set_file_name");
+				update_error_holder_code(_error, 4, false);
+				free(_command_address);
+				free(_command);
+				return true; //no valid command
+			}
 		}
 	} 
 
