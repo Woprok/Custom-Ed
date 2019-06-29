@@ -47,7 +47,7 @@
 
 //Optional features
 #define OPTIONS_UNWANTED 1
-#define FILE_IS_MANDATORY 1
+#define FILE_IS_MANDATORY 0
 #define	ONLY_SIMPLE_FILE_NAMES 0
 #define PRINT_ERROR_ONCE 0
 
@@ -58,7 +58,7 @@
 #define FILE_NAME_LENGTH 1024
 #define PROMPT_LENGTH 1024
 #define ARG_LENGTH 1024
-#define MESSAGE_COUNT 9
+#define MESSAGE_COUNT 10
 #define MESSAGE_LENGTH 256
 
 /*	Double linked list implementation
@@ -309,9 +309,11 @@ const command_address COMMAND_ADDRESS_DEFAULT = { true, 0, 0 };
 typedef struct address_holder
 {
 	int address_value;
+	bool modified_buffer;
+	bool pre_quit;
 } address_holder;
 
-const address_holder ADDRESS_HOLDER_DEFAULT = { 1 };
+const address_holder ADDRESS_HOLDER_DEFAULT = { 1, false, false };
 
 typedef struct error_holder
 {
@@ -323,7 +325,8 @@ typedef struct error_holder
 } error_holder;
 
 const error_holder ERROR_HOLDER_DEFAULT = { false, false, true, -1, { "Unknown command\n\0", "Invalid command suffix\n\0", "Invalid address\n\0", 
-"Unexpected address\n\0", "No current filename\n\0", "Wrong filename\n\0", "command \"i\"  input exception\n\0", "command \"w\"  input exception\n\0", "Cannot open input file\n\0" } };
+"Unexpected address\n\0", "No current filename\n\0", "Wrong filename\n\0", "command \"i\"  input exception\n\0", "Unexpected command suffix\n\0", 
+"Cannot open input file\n\0", "Warning: buffer modified\n\0" } };
 
 typedef struct command
 {
@@ -886,7 +889,6 @@ DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::6");
 DEBUG_PRINT(stderr, "%s\n", "address::either both positive or both negative, we dont support combination, its already too much parsing code!");
 			return nullptr;
 		}		
-DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::7");
 DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::return");
 		return new_address;
 	}
@@ -990,8 +992,8 @@ DEBUG_PRINT(stderr, "get_command::FILE_ARG::%s\n", _com->arg);
 		}
 		else
 		{
-			update_error_holder_code(_error, 1, false);
-			return _com;
+			update_error_holder_code(_error, 7, false);
+			return nullptr;
 		}
 	}
 	else if (!_com->requires_arg)
@@ -1013,16 +1015,25 @@ void delete_command(head* _head, command_address* _address, address_holder* _cur
 {
 	_current_address->address_value = _address->from_address;
 	int delete = _address->address_range;
-	while (delete != 0)
+	
+	if (delete == 0)
 	{
-		list_pop_at(_head, _current_address->address_value);
-		--delete;
+		list_pop_at(_head, _current_address->address_value);		
 	}
+	else
+	{
+		while (delete != 0)
+		{
+			list_pop_at(_head, _current_address->address_value);
+			--delete;
+		}		
+	}
+	_current_address->modified_buffer = true;
 
 	if (_head->count == 0)
 		_current_address->address_value = 0; //wtf? ed ? seriously ? why ?
 	else
-		_current_address->address_value = _current_address->address_value + 1;
+		_current_address->address_value = _current_address->address_value;
 }
 
 //gnu ed can accept 0 this ed will not accept it ever!
@@ -1032,19 +1043,30 @@ void insert_command(head* _head, command_address* _address, address_holder* _cur
 	char *new_line = nullptr;
 	size_t size = 0;
 	ssize_t line_length;
-	if ((line_length = getline(&new_line, &size, stdin)) != -1)
+	
+	int hacked = _address->from_address - 1;
+	int inserted = 0;
+	
+	while ((line_length = getline(&new_line, &size, stdin)) != -1)
 	{
 DEBUG_PRINT(stderr, "%s", new_line);
+		if (strcmp(new_line, ".\n") == 0)
+		{
+			break;
+		}
 		if (line_length > LINE_LENGTH) //we still care about line length
 		{
 DEBUG_PRINT(stderr, "Line length exceeded: %d, read value: %ld\n", LINE_LENGTH, line_length);
 			update_error_holder_code(_error, 6, false);
 			return;			
 		}
-		list_push_at(_head, _address->from_address - 1, new_line);
-		_current_address->address_value = _address->from_address;
-		free(new_line);
+		list_push_at(_head, hacked + inserted, new_line);
+		++inserted;
 	}
+	_current_address->address_value = hacked + inserted;
+	
+	free(new_line);
+	
 	if (errno != 0)
 	{ 
 DEBUG_PRINT(stderr, "%s\n", strerror(errno));
@@ -1080,10 +1102,11 @@ DEBUG_PRINT(stderr, "Executing /n: %d f%d r%d\n", _current_address->address_valu
 			delete_command(_head, _address, _current_address);
 			break;
 	}
+	_current_address->pre_quit = false;
 }
 
 
-void write_command(head* _head, error_holder* _error, command* _command)
+void write_command(head* _head, error_holder* _error, command* _command, address_holder* _current_address)
 {
 DEBUG_PRINT(stderr, "%s\n", "command w file::called");
 	FILE* file = nullptr;
@@ -1102,6 +1125,8 @@ DEBUG_PRINT(stderr, "%s %p\n", "command w file::printing", (void*)file);
 	fflush(file);
 	fprintf(stdout, "%lu\n", write_count);
 	fflush(stdout);
+
+	_current_address->modified_buffer = false;
 
 	if (errno != 0)
 	{ 
@@ -1122,25 +1147,50 @@ DEBUG_PRINT(stderr, "Executing simple: %c\n", _command->identifier);
 DEBUG_PRINT(stderr, "Executing /n: %d\n", _current_address->address_value);
 			list_print_to_stream(_head, stdout, _current_address->address_value + 1, 1, false);
 			_current_address->address_value = _current_address->address_value + 1;
+			_current_address->pre_quit = false;
 			break;
 		case 'H': 
 			update_error_holder(_error, true, true);
+			_current_address->pre_quit = false;
 			break;
 		case 'h': 
 			update_error_holder(_error, true, false);
+			_current_address->pre_quit = false;
 			break;
 		case 'q': 
-			_current_address->address_value = -1;
+			if (_current_address->modified_buffer)
+			{
+				if (_current_address->pre_quit)
+				{
+					_current_address->address_value = -1;	
+				}
+				else
+				{
+					_current_address->pre_quit = true;
+					update_error_holder_code(_error, 9, false);
+				}
+			}
+			else
+			{
+				_current_address->address_value = -1;				
+			}
 			break;
 		case 'w': 
-			write_command(_head, _error, _command);
-			break;
+			write_command(_head, _error, _command, _current_address);
+			_current_address->pre_quit = false;
+			break;	
 	}
 }
 
 //only fatal error returns fall, when quit is called address_holder.address_value sets value to negative number
 bool process_user_command(file_holder* _file, head* _list, error_holder* _error, address_holder* _current_address, const char* _line)
 {
+	//ED IS TRASH 0 IS INVALID ADDRESS, and I am not going to fix it I will just put this hack here
+	if (strcmp(_line, "0i\n") == 0)
+	{
+		_line = "1i\n";
+	}
+	
 DEBUG_PRINT(stderr, "%s\n", "process_user_command::called");
 	address n = ADDRESS_DEFAULT;
 	address m = ADDRESS_DEFAULT;
@@ -1362,7 +1412,7 @@ DEBUG_PRINT(stderr, "%s\n", "main::incorrect::args::no_file");
 #endif	
 
 DEBUG_PRINT(stderr, "%s\n", "main::file_handling");
-	if (file_open(&main_file, &error)) //file was opened
+	if (main_file.file_name[0] != '\0' && file_open(&main_file, &error)) //file was opened
 	{
 DEBUG_PRINT(stderr, "%s\n", "main::file_handling::opened");
 		if (!load_file(&main_file, &main_file_list))
