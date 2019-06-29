@@ -228,25 +228,26 @@ DEBUG_PRINT(stderr, "%s\n", "list_pop_at::finished");
 }
 
 //Prints list content from index up to count, optional to print line index
-void list_print_to_stream(head* _head, FILE* _stream, const int _index, const int _count, bool _print_index)
+ssize_t list_print_to_stream(head* _head, FILE* _stream, const int _index, const int _count, bool _print_index)
 {
 DEBUG_PRINT(stderr, "%s\n", "list_print_to_stream::called");
 	node* current_node = nullptr;
 	int current_index = 1;
 	int printed = 0;	
+	ssize_t write_count = 0;
 	if (!list_get_node(_head, _index, &current_node, &current_index))
 	{
 DEBUG_PRINT(stderr, "%s\n", "list_print_to_stream::skipped");		
-		return;
+		return write_count;
 	}
 DEBUG_PRINT(stderr, "%s\n", "list_print_to_stream::printing");
 	while(current_node != nullptr && printed < _count)
 	{
 DEBUG_PRINT(stderr, "%s%d\n", "list_print_to_stream::printed: ", current_index);
 		if (_print_index)
-			fprintf(_stream, "%d%c%s", current_index, '\t', current_node->content);
+			write_count += fprintf(_stream, "%d%c%s", current_index, '\t', current_node->content);
 		else
-			fprintf(_stream, "%s", current_node->content);
+			write_count += fprintf(_stream, "%s", current_node->content);
 		
 		fflush(_stream);
 		current_node = current_node->successor;
@@ -254,6 +255,7 @@ DEBUG_PRINT(stderr, "%s%d\n", "list_print_to_stream::printed: ", current_index);
 		++current_index;
 	}
 DEBUG_PRINT(stderr, "%s\n", "list_print_to_stream::finished");
+	return write_count;
 }
 
 
@@ -831,26 +833,46 @@ DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::single");
 	if (_address_m->is_set)
 	{
 DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double");
+DEBUG_PRINT(stderr, "%s: %d <-> %d\n", "determine_address_validity::double", n_value, m_value);
 		//1 10
 		//10 1
 		//-1 -10
 		//-10 -1
 		if (n_value > m_value)
 			return nullptr; //this mean that n is smaller than m
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::1");
 		if (n_value < 0 && (_current_line + n_value) < 1)
 			return nullptr;
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::2");
 		if (m_value < 0 && (_current_line + m_value) < 1)
 			return nullptr;
-		if (n_value == 0 || n_value > _head_count || m_value == 0 || m_value > _head_count || (n_value != m_value && (n_value + m_value) > _head_count))
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::3");
+		if (n_value == 0 || n_value > _head_count || m_value == 0 || m_value > _head_count)
 			return nullptr; //this mean that its out of bounds
-
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::4");
+		if (n_value != m_value)
+		{
+			if (n_value > 0 && m_value > 0)
+			{
+				if ((m_value - n_value + 1) > _head_count)
+					return nullptr;
+			}
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::4.1");
+			if (n_value < 0 && m_value < 0)
+			{				
+				if (((_current_line + m_value) - (_current_line + n_value) + 1) > _head_count)
+					return nullptr;
+			}
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::4.1");
+		}			
 		if (n_value > 0 && m_value > 0)
 		{
 			new_address->from_address = n_value;
 			new_address->address_range = m_value;
 			if (n_value != m_value)
 				new_address->address_range = new_address->address_range - new_address->from_address + 1;
-		}
+		}		
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::5");
 		if (n_value < 0 && m_value < 0)
 		{
 			new_address->from_address = (_current_line + n_value);
@@ -858,11 +880,13 @@ DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double");
 			if (n_value != m_value)
 				new_address->address_range = new_address->address_range - new_address->from_address + 1;
 		}
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::6");
 		if ((n_value < 0 && m_value > 0) || (n_value > 0 && m_value < 0)) //just fcking decide what you want and dont combine both
 		{
 DEBUG_PRINT(stderr, "%s\n", "address::either both positive or both negative, we dont support combination, its already too much parsing code!");
 			return nullptr;
 		}		
+DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::double::pass::7");
 DEBUG_PRINT(stderr, "%s\n", "determine_address_validity::return");
 		return new_address;
 	}
@@ -958,6 +982,11 @@ DEBUG_PRINT(stderr, "%s\n", "get_command::decided not file");
 			free(buffer);
 DEBUG_PRINT(stderr, "get_command::FILE_ARG::%s\n", _com->arg);
 			return _com;
+		}
+		else if (_command_line[1] == '\n' || _command_line[1] == '\0')
+		{
+			return _com;
+			//no action
 		}
 		else
 		{
@@ -1064,12 +1093,15 @@ DEBUG_PRINT(stderr, "%s\n", "command w file::already_closed");
 DEBUG_PRINT(stderr, "%s\n", strerror(errno));
 		errno = 0;
 		update_error_holder_code(_error, 7, false);
+
 		return;
 	}	
 	
 DEBUG_PRINT(stderr, "%s %p\n", "command w file::printing", (void*)file);
-	list_print_to_stream(_head, file, 1, _head->count, false);
+	ssize_t write_count = list_print_to_stream(_head, file, 1, _head->count, false);
 	fflush(file);
+	fprintf(stdout, "%lu\n", write_count);
+	fflush(stdout);
 
 	if (errno != 0)
 	{ 
@@ -1342,7 +1374,12 @@ DEBUG_PRINT(stderr, "%s\n", "main::list::cleared");
 DEBUG_PRINT(stderr, "%s\n", "main::file_handling::closed");
 			exit(errno != 0 ? errno : 1);
 		}
+		else
+		{
 DEBUG_PRINT(stderr, "%s\n", "main::file_handling::reading_ok");
+			file_close(&main_file); //attempt to close a file
+DEBUG_PRINT(stderr, "%s\n", "main::file_handling::closed");
+		}
 	}
 	else
 	{
@@ -1355,7 +1392,5 @@ DEBUG_PRINT(stderr, "%s\n", "main::loop::finished");
 
 	list_destroy(&main_file_list); //we are nice and we clear most of our trash
 DEBUG_PRINT(stderr, "%s\n", "main::list::cleared");
-	file_close(&main_file); //attempt to close a file
-DEBUG_PRINT(stderr, "%s\n", "main::file_handling::closed");
 	return execution_result;
 }
