@@ -1277,7 +1277,7 @@ DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::quit");
 				}
 				if (_error->code == 8)
 					continue;
-				if (!_file->is_open && _error->is_set) //if file opening throws error, code executes until another error is triggered
+				if (!(_file->error_code == 0) && _error->is_set) //if file opening throws error, code executes until another error is triggered
 				{
 DEBUG_PRINT(stderr, "%s\n", "process_user_input::processing::command::force_quit");
 					is_running = false;	
