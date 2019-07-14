@@ -713,9 +713,9 @@ DEBUG_PRINT(stderr, "%s\n", "convert_address::error");
 		return false;
 	}
 
-	char* buffer = malloc(sizeof(char) * (character_count + 1-1)); //+ '\0'
+	char* buffer = malloc(sizeof(char) * (character_count)); //+ '\0'
 	strncpy(buffer, _field, character_count); //get substring copying valid chars
-	buffer[character_count + 1-1] = '\0'; //terminate string
+	buffer[character_count] = '\0'; //terminate string
 DEBUG_PRINT(stderr, "buffer: %d\n", character_count);
 DEBUG_PRINT(stderr, "add: %s\n", buffer);
 
@@ -747,9 +747,9 @@ DEBUG_PRINT(stderr, "%s\n", "obtain_address::convert_simple");
 	{
 DEBUG_PRINT(stderr, "%s\n", "obtain_address::convert_double");
 		int character_count_n = i;
-		char* buffer_n = malloc(sizeof(char) * character_count_n + 1-1); //+ '\0'
+		char* buffer_n = malloc(sizeof(char) * character_count_n); //+ '\0'
 		strncpy(buffer_n, _line, character_count_n); //get substring before delimeter
-		buffer_n[character_count_n + 1-1] = '\0'; //terminate string
+		buffer_n[character_count_n] = '\0'; //terminate string
 
 DEBUG_PRINT(stderr, "obtain_address::FIRST::%s\n", buffer_n);
 		bool convert_n = convert_address(_address_n, _command_offset, buffer_n); // reality is sad and we need substring with '\0'
@@ -977,9 +977,9 @@ DEBUG_PRINT(stderr, "%s\n", "get_command::decided not file");
 				return nullptr;
 			}
 
-			char* buffer = malloc(sizeof(char) * (i + 1-1)); //+ '\0'
+			char* buffer = malloc(sizeof(char) * (i)); //+ '\0'
 			strncpy(buffer, moved, i); //get substring copying valid chars
-			buffer[i + 1-1] = '\0'; //terminate string
+			buffer[i] = '\0'; //terminate string
 			strcpy(_com->arg, buffer); //copy file_name;
 			free(buffer);
 DEBUG_PRINT(stderr, "get_command::FILE_ARG::%s\n", _com->arg);
